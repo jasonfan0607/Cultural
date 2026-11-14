@@ -1,0 +1,5 @@
+# Copy to application-local.yml. Start Maven from the backend directory.
+spring:
+  datasource:
+    username: root
+    password: "your_mysql_password"

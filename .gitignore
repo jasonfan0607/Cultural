@@ -1,0 +1,25 @@
+# Dependencies and generated output
+**/node_modules/
+**/dist/
+**/dist-ssr/
+**/target/
+**/logs/
+*.log
+**/__pycache__/
+
+# Local credentials and editor settings
+.env
+**/.env
+*.local
+**/*.local
+**/application-local.yml
+**/.idea/
+**/.vscode/
+.DS_Store
+Thumbs.db
+
+# Local publishing checkout and diagnostics
+.publish/
+ai-design-regression.png
+ai-design-verified.png
+ui-ux-pro-max-skill/
