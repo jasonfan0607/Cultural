@@ -126,7 +126,23 @@
                     @click="viewCollection(item)"
                   >
                     <div class="card-image">
-                      <img :src="item.image" :alt="item.name" loading="lazy" />
+                      <img
+                        v-if="item.image && !failedCollectionImages.has(item.id)"
+                        :src="item.image"
+                        :alt="item.name"
+                        loading="lazy"
+                        decoding="async"
+                        @error="failedCollectionImages.add(item.id)"
+                      />
+                      <div v-else class="collection-image-placeholder" role="img" :aria-label="`${item.name}：封面暂不可用`">
+                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" stroke-width="1.5" />
+                          <circle cx="8" cy="8" r="1.5" fill="currentColor" />
+                          <path d="M3 17L9 11L13 15L16 12L21 17" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+                        </svg>
+                        <span>{{ item.name }}</span>
+                        <small>封面暂不可用</small>
+                      </div>
                       <div class="card-overlay">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
@@ -512,10 +528,11 @@ const tabs = [
 ]
 
 const collections = ref([
-  { id: 1, name: '南京云锦', category: '传统技艺', image: 'https://picsum.photos/400/300?random=1', likes: 128 },
-  { id: 2, name: '苏州刺绣', category: '传统技艺', image: 'https://picsum.photos/400/300?random=2', likes: 256 },
-  { id: 3, name: '宜兴紫砂', category: '传统技艺', image: 'https://picsum.photos/400/300?random=3', likes: 89 }
+  { id: 1, name: '南京云锦', category: '传统技艺', image: '/images/collections/nanjing-yunjin.jpg', likes: 128 },
+  { id: 2, name: '苏州刺绣', category: '传统技艺', image: '/images/collections/suzhou-embroidery.jpg', likes: 256 },
+  { id: 3, name: '宜兴紫砂', category: '传统技艺', image: '/images/collections/yixing-zisha.jpg', likes: 89 }
 ])
+const failedCollectionImages = ref(new Set())
 
 const totalLikes = ref(0)
 
@@ -724,6 +741,8 @@ function openEditProfile() {
 .content-card:hover { transform: translateY(-6px); box-shadow: 0 22px 44px rgba(15,23,42,.10); }
 .card-image { position:relative; height:170px; overflow:hidden; }
 .card-image img { width:100%; height:100%; object-fit:cover; transition: transform .8s ease; }
+.collection-image-placeholder { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; background:linear-gradient(135deg, #f4e7d5, #eee5e2); color:#8b1538; }
+.collection-image-placeholder small { color:#6d665d; font-size:12px; }
 .content-card:hover .card-image img { transform: scale(1.08); }
 .card-overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background: linear-gradient(135deg, rgba(139,21,56,.78), rgba(201,169,98,.55)); opacity:0; transition: opacity .3s ease; color:#fff; }
 .content-card:hover .card-overlay { opacity:1; }
