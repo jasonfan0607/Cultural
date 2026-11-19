@@ -1,0 +1,116 @@
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright')
+const event = (name, data) => `event:${name}\ndata:${JSON.stringify(data)}\n\n`
+;(async () => {
+  const browser = await chromium.launch({ channel: 'chrome', headless: true })
+  try {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } })
+    await page.addInitScript(() => {
+      localStorage.setItem('auth_token', 'history-test-token'); localStorage.setItem('isLogin', 'true')
+      if (!localStorage.getItem('username')) localStorage.setItem('username', 'history-alice')
+    })
+    const errors = [], calls = [], deleted = []
+    page.on('pageerror', e => errors.push(e.message))
+    await page.route('**/agent-api/sessions/**', route => {
+      deleted.push(route.request().url().split('/').at(-1))
+      return route.fulfill({ contentType: 'application/json', body: '{"deleted":true}' })
+    })
+    await page.route('**/agent-api/chat', route => {
+      const request = route.request().postDataJSON(); calls.push(request)
+      const sessionId = request.sessionId || `session-${calls.length}`
+      const source = { id: 'web', type: 'web', title: '云锦资料', url: 'https://example.org/yunjin', domain: 'example.org', description: '织造工艺' }
+      return route.fulfill({ contentType: 'text/event-stream', body: event('session', { sessionId }) +
+        event('done', { sessionId, content: `## ${request.message}\n\n**已保存的设计建议**`, sources: [source], images: [] }) })
+    })
+    await page.goto((process.env.FRONTEND_URL || 'http://127.0.0.1:5175') + '/agent')
+    const send = async text => {
+      await page.locator('#agent-input').fill(text); await page.getByRole('button', { name: '开始探索' }).click()
+      await page.locator('.assistant h2').filter({ hasText: text }).waitFor()
+      await page.waitForFunction(() => !document.querySelector('.tool-status'))
+    }
+    await send('南京云锦礼盒方案')
+    assert.equal(await page.locator('.history-item').count(), 1)
+    await page.getByRole('button', { name: '开启新的探索' }).click()
+    assert.equal(await page.locator('.agent-message').count(), 0)
+    assert.equal(await page.locator('.history-item').count(), 1)
+    assert.equal(deleted.length, 0, 'new conversation must not delete previous session')
+    await send('苏绣茶包装方案')
+    await page.locator('.history-select').filter({ hasText: '南京云锦礼盒方案' }).click()
+    assert.equal(await page.locator('.assistant h2').innerText(), '南京云锦礼盒方案')
+    assert.equal(await page.locator('.source-list details').count(), 1)
+    await send('改成绿色礼盒')
+    assert.equal(calls.at(-1).sessionId, 'session-1')
+    await page.reload()
+    await page.locator('.history-select').filter({ hasText: '南京云锦礼盒方案' }).click()
+    assert.equal(await page.locator('.assistant h2').count(), 2, 'messages survive reload')
+    await page.getByRole('button', { name: '删除对话：苏绣茶包装方案' }).click()
+    await page.getByRole('button', { name: '取消', exact: true }).click()
+    assert.equal(await page.locator('.history-item').count(), 2)
+    await page.getByRole('button', { name: '删除对话：苏绣茶包装方案' }).click()
+    await page.getByRole('button', { name: '确认删除', exact: true }).click()
+    assert.equal(await page.locator('.history-item').count(), 1)
+    assert.equal(await page.locator('.assistant h2').count(), 2)
+    await page.reload()
+    assert.equal(await page.locator('.history-item').count(), 1, 'deleted record stays deleted')
+    await page.locator('.history-select').click()
+    fs.mkdirSync('tests/artifacts', { recursive: true })
+    await page.screenshot({ path: 'tests/artifacts/agent-history-desktop.png', fullPage: true })
+    await page.evaluate(() => localStorage.setItem('username', 'history-bob'))
+    await page.reload()
+    assert.equal(await page.locator('.history-item').count(), 0, 'accounts have separate histories')
+    await page.evaluate(() => {
+      localStorage.setItem('username', 'history-alice')
+      for (const key of Object.keys(localStorage).filter(k => k.startsWith('cultural.agent-history.v1:'))) {
+        const record = JSON.parse(localStorage.getItem(key)); record.sessionTouchedAt = Date.now() - 3600000
+        localStorage.setItem(key, JSON.stringify(record))
+      }
+    })
+    await page.setViewportSize({ width: 390, height: 844 }); await page.reload()
+    await page.getByRole('button', { name: /历史对话/ }).click()
+    await page.locator('.history-select').click()
+    await page.locator('.history-readonly').waitFor()
+    assert.equal(await page.locator('.assistant h2').count(), 2, 'expired sessions are still readable')
+    assert.equal(await page.locator('#agent-input').count(), 0)
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+    await page.screenshot({ path: 'tests/artifacts/agent-history-mobile.png', fullPage: true })
+    await page.getByRole('button', { name: '删除对话：南京云锦礼盒方案' }).click()
+    await page.getByRole('button', { name: '确认删除', exact: true }).click()
+    assert.equal(await page.locator('.agent-message').count(), 0)
+    assert.equal(await page.locator('.history-item').count(), 0)
+    await page.reload()
+    assert.equal(await page.locator('.history-item').count(), 0)
+    assert.deepEqual(deleted.sort(), ['session-1', 'session-2'])
+    await page.evaluate(() => {
+      const original = window.fetch.bind(window)
+      window.fetch = (url, options) => {
+        if (!String(url).endsWith('/chat')) return original(url, options)
+        return Promise.resolve(new Response(new ReadableStream({ start(controller) {
+          const emit = (name, data) => controller.enqueue(new TextEncoder().encode(`event:${name}\ndata:${JSON.stringify(data)}\n\n`))
+          emit('session', { sessionId: 'interrupted-session' })
+          emit('delta', { text: '已经收到的部分文字' })
+          options.signal.addEventListener('abort', () => controller.error(new DOMException('cancelled', 'AbortError')))
+          window.finishLateHistoryReply = () => { try { emit('delta', { text: '不应出现的迟到文字' }) } catch {} }
+        } }), { headers: { 'content-type': 'text/event-stream' } }))
+      }
+    })
+    await page.locator('#agent-input').fill('中断的探索')
+    await page.getByRole('button', { name: '开始探索' }).click()
+    await page.getByText('已经收到的部分文字', { exact: true }).waitFor()
+    await page.getByRole('button', { name: '开启新的探索' }).click()
+    await page.evaluate(() => window.finishLateHistoryReply())
+    assert.equal(await page.locator('.agent-message').count(), 0)
+    if (await page.getByRole('button', { name: /历史对话/ }).getAttribute('aria-expanded') === 'false')
+      await page.getByRole('button', { name: /历史对话/ }).click()
+    await page.locator('.history-select').filter({ hasText: '中断的探索' }).click()
+    await page.getByText('已经收到的部分文字', { exact: true }).waitFor()
+    assert.equal(await page.getByText('不应出现的迟到文字', { exact: true }).count(), 0)
+    assert.equal(await page.locator('.tool-status').count(), 0)
+    await page.getByRole('button', { name: '删除对话：中断的探索' }).click()
+    await page.getByRole('button', { name: '确认删除', exact: true }).click()
+    await page.reload()
+    assert.equal(await page.locator('.history-item').count(), 0)
+    assert.deepEqual(errors, [])
+    console.log('PASS: history entry, switch, resume, reload, delete/cancel, account isolation, expired history, mobile layout and interrupted stream isolation')
+  } finally { await browser.close() }
+})().catch(e => { console.error(e); process.exitCode = 1 })

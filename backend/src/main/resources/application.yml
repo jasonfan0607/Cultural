@@ -20,7 +20,8 @@ spring:
   
   sql:
     init:
-      mode: always
+      # Sample data is an explicit one-time setup step; never reinsert on every restart.
+      mode: ${DB_SEED_MODE:never}
       data-locations: classpath:db/insert_sample_data.sql
       continue-on-error: true
   

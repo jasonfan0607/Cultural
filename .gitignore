@@ -4,6 +4,7 @@
 **/dist-ssr/
 **/target/
 **/logs/
+agent-service/data/
 *.log
 **/__pycache__/
 
@@ -22,4 +23,5 @@ Thumbs.db
 .publish/
 ai-design-regression.png
 ai-design-verified.png
-ui-ux-pro-max-skill/
+ui-ux-pro-max-skill/.git/
+**/tests/artifacts/

@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node ../scripts/start-agent.mjs",
     "dev": "vite --port 5175 --force",
     "start": "npm run dev",
     "serve": "npm run dev",
@@ -17,6 +18,7 @@
     "@surely-vue/table": "^5.0.12",
     "element-plus": "^2.11.4",
     "fullpage.js": "^4.0.37",
+    "markdown-it": "^15.0.3",
     "vue": "^3.5.22",
     "vue-router": "^4.5.1"
   },

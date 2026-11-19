@@ -28,7 +28,7 @@ public class AuthController {
     
     private final AuthService authService;
     
-    @Log(value = "用户登录", module = "认证管理", operation = "登录")
+    @Log(value = "用户登录", module = "认证管理", operation = "登录", saveRequestData = false, saveResponseData = false)
     @Operation(summary = "用户登录", description = "用户登录获取Token")
     @PostMapping("/login")
     public Result<TokenVO> login(@Valid @RequestBody LoginDTO loginDTO) {
@@ -36,7 +36,7 @@ public class AuthController {
         return Result.success("登录成功", tokenVO);
     }
     
-    @Log(value = "用户注册", module = "认证管理", operation = "注册")
+    @Log(value = "用户注册", module = "认证管理", operation = "注册", saveRequestData = false)
     @Operation(summary = "用户注册", description = "新用户注册")
     @PostMapping("/register")
     public Result<Void> register(@Valid @RequestBody RegisterDTO registerDTO) {
@@ -67,7 +67,7 @@ public class AuthController {
         return Result.success("更新成功", userVO);
     }
     
-    @Log(value = "修改密码", module = "认证管理", operation = "修改密码")
+    @Log(value = "修改密码", module = "认证管理", operation = "修改密码", saveRequestData = false)
     @Operation(summary = "修改密码", description = "修改当前用户密码")
     @PutMapping("/password")
     public Result<Void> updatePassword(

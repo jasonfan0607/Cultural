@@ -5,7 +5,7 @@
         <aside class="profile-sidebar">
           <div class="profile-card user-card">
             <div class="user-card-header">
-              <div class="avatar-container" @click="showAvatarModal = true">
+              <div class="avatar-container" @click="openEditProfile">
                 <el-avatar :src="avatar" :size="100" class="user-avatar" />
                 <div class="avatar-overlay">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -78,7 +78,7 @@
                 </svg>
                 <span>探索文化库</span>
               </button>
-              <button class="quick-action-btn" @click="router.push('/ai-design')">
+              <button class="quick-action-btn" @click="router.push('/design')">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M12 19L19 12L22 15L15 22L12 19Z"/>
                   <path d="M18 13L16.5 5.5L2 2L5.5 16.5L13 18L18 13Z"/>
@@ -160,6 +160,7 @@
                           </svg>
                           {{ item.likes }}
                         </span>
+                        <button type="button" class="remove-collection-btn" @click.stop="uncollect(item)">取消收藏</button>
                       </div>
                     </div>
                   </div>
@@ -170,7 +171,7 @@
                   </svg>
                   <h4>暂无收藏</h4>
                   <p>去发现更多精彩内容吧</p>
-                  <button class="primary-btn" @click="router.push('/culture')">浏览文化库</button>
+                  <button class="primary-btn" @click="router.push('/gallery')">浏览江苏图库</button>
                 </div>
               </div>
 
@@ -224,7 +225,7 @@
                   </svg>
                   <h4>暂无作品</h4>
                   <p>开始你的AI创作之旅</p>
-                  <button class="primary-btn" @click="router.push('/ai-design')">开始创作</button>
+                  <button class="primary-btn" @click="router.push('/design')">开始创作</button>
                 </div>
               </div>
 
@@ -249,7 +250,7 @@
                     </svg>
                   </div>
                   
-                  <div class="settings-item" @click="router.push('/ai-design')">
+                  <div class="settings-item" @click="router.push('/design')">
                     <div class="settings-icon">
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 19L19 12L22 15L15 22L12 19Z"/>
@@ -424,10 +425,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, h } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { authApi, userWorkApi, collectionApi, removeToken } from '@/utils/api'
+import { authApi, removeToken } from '@/utils/api'
+import { readGalleryCollections, removeGalleryCollection, subscribeGalleryCollections } from '@/utils/galleryCollections'
+import { currentDesignUser, readUserWorks, subscribeUserWorks } from '@/utils/designStorage'
 
 const router = useRouter()
 
@@ -527,20 +530,26 @@ const tabs = [
   }
 ]
 
-const collections = ref([
-  { id: 1, name: '南京云锦', category: '传统技艺', image: '/images/collections/nanjing-yunjin.jpg', likes: 128 },
-  { id: 2, name: '苏州刺绣', category: '传统技艺', image: '/images/collections/suzhou-embroidery.jpg', likes: 256 },
-  { id: 3, name: '宜兴紫砂', category: '传统技艺', image: '/images/collections/yixing-zisha.jpg', likes: 89 }
-])
+const collections = ref([])
+let unsubscribeCollections
+function loadCollections() {
+  collections.value = readGalleryCollections().map(item => ({
+    ...item, name: item.title, image: item.imageUrl, category: item.categoryLabel || '江苏图库'
+  }))
+}
 const failedCollectionImages = ref(new Set())
 
 const totalLikes = ref(0)
 
-const works = ref([
-  { id: 1, title: '云锦纹样设计', description: '基于南京云锦传统纹样的现代设计', style: '传统风格', date: '2024-01-15', image: 'https://picsum.photos/400/300?random=4' },
-  { id: 2, title: '苏绣花鸟图', description: '融合现代审美的苏绣花鸟图案', style: '现代风格', date: '2024-01-10', image: 'https://picsum.photos/400/300?random=5' },
-  { id: 3, title: '紫砂壶造型', description: '传统紫砂壶的创新造型设计', style: '创新风格', date: '2024-01-05', image: 'https://picsum.photos/400/300?random=6' }
-])
+const works = ref([])
+let unsubscribeWorks
+function loadWorks() {
+  try {
+    works.value = readUserWorks(currentDesignUser())
+  } catch {
+    ElMessage.error('读取作品失败，请检查浏览器存储空间后重试')
+  }
+}
 
 function checkLoginStatus() {
   const isLogin = localStorage.getItem('isLogin') === 'true'
@@ -551,11 +560,20 @@ function checkLoginStatus() {
 
 onMounted(() => {
   checkLoginStatus()
+  loadCollections()
+  loadWorks()
+  unsubscribeCollections = subscribeGalleryCollections(loadCollections)
+  unsubscribeWorks = subscribeUserWorks(loadWorks)
   username.value = localStorage.getItem('username') || '用户'
   nickname.value = localStorage.getItem('nickname') || username.value
   avatar.value = localStorage.getItem('avatar') || 'https://i.pravatar.cc/150'
   signature.value = localStorage.getItem('signature') || signature.value
   totalLikes.value = Math.floor(Math.random() * 1000)
+})
+
+onUnmounted(() => {
+  unsubscribeCollections?.()
+  unsubscribeWorks?.()
 })
 
 function saveSignature() {
@@ -627,6 +645,7 @@ async function handleSave() {
       localStorage.setItem('phone', profileForm.phone || '')
       localStorage.setItem('email', profileForm.email || '')
       localStorage.setItem('bio', profileForm.bio || '')
+      window.dispatchEvent(new Event('user-info-updated'))
       
       originalForm.avatar = profileForm.avatar
       originalForm.nickname = profileForm.nickname
@@ -648,11 +667,20 @@ async function handleSave() {
 }
 
 function viewCollection(item) {
-  ElMessage.info(`查看收藏: ${item.name}`)
+  router.push({ path: '/gallery', query: { work: String(item.id) } })
+}
+
+function uncollect(item) {
+  try {
+    removeGalleryCollection(item.id)
+    ElMessage.success('已取消收藏')
+  } catch {
+    ElMessage.error('取消收藏失败，请重试')
+  }
 }
 
 function viewWork(item) {
-  ElMessage.info(`查看作品: ${item.title}`)
+  router.push('/works')
 }
 
 async function logout() {
@@ -687,7 +715,7 @@ function openEditProfile() {
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-:root {
+.profile-page {
   --p-bg: #f7f4ef;
   --p-surface: rgba(255, 255, 255, 0.82);
   --p-text: #221e1a;
@@ -750,6 +778,7 @@ function openEditProfile() {
 .card-body h4 { margin:0 0 4px; font-size:16px; font-weight:700; }
 .card-body p { margin:0 0 12px; color: var(--p-muted); font-size:13px; line-height:1.7; }
 .card-meta { display:flex; gap:12px; }
+.remove-collection-btn { margin-left:auto; border:0; background:transparent; color:var(--p-accent); cursor:pointer; font-size:12px; }
 .meta-item { display:flex; align-items:center; gap:4px; color:#8b837a; font-size:12px; }
 .empty-state { text-align:center; padding:62px 20px; }
 .empty-state svg { color: rgba(139,21,56,.35); margin-bottom:16px; }
@@ -778,5 +807,6 @@ function openEditProfile() {
 @media (max-width:1024px) { .profile-grid { grid-template-columns:1fr; } }
 @media (max-width:768px) { .profile-page { padding:16px; } .content-grid { grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); } .tab-btn span { display:none; } }
 @media (max-width:480px) { .profile-page { padding:12px; } .profile-card { padding:16px; } .content-grid { grid-template-columns:1fr; } .dialog-footer { flex-direction:column-reverse; } .cancel-btn, .save-btn { width:100%; justify-content:center; } }
+.profile-page { padding-top: calc(var(--site-navbar-height, 96px) + 24px); }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; } }
 </style>

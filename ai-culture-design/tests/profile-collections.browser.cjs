@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict')
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright')
+const origin = process.env.FRONTEND_URL || 'http://127.0.0.1:4173'
 
 ;(async () => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
@@ -11,13 +12,19 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright')
       localStorage.setItem('isLogin', 'true')
       localStorage.setItem('username', '收藏封面测试')
       localStorage.setItem('avatar', '/logo1.png')
+      // Explicit saved fixtures: production no longer invents these collections.
+      localStorage.setItem('galleryCollections_v1_' + encodeURIComponent('收藏封面测试'), JSON.stringify([
+        { id: 101, title: '南京云锦', categoryLabel: '传统技艺', imageUrl: '/images/collections/nanjing-yunjin.jpg', likes: 128 },
+        { id: 102, title: '苏州刺绣', categoryLabel: '传统技艺', imageUrl: '/images/collections/suzhou-embroidery.jpg', likes: 256 },
+        { id: 103, title: '宜兴紫砂', categoryLabel: '传统技艺', imageUrl: '/images/collections/yixing-zisha.jpg', likes: 89 }
+      ]))
     })
     // The collection covers must work without any external image service.
     await page.route('**/*', route => {
       if (new URL(route.request().url()).hostname === '127.0.0.1') return route.continue()
       return route.abort()
     })
-    await page.goto('http://127.0.0.1:5175/profile')
+    await page.goto(origin + '/profile')
     const images = page.locator('.tab-content .card-image img')
     await images.first().waitFor()
     assert.equal(await images.count(), 3)

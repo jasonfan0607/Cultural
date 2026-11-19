@@ -114,7 +114,9 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public UserVO getCurrentUser() {
         LoginUser loginUser = getLoginUser();
-        return BeanUtil.copyProperties(loginUser, UserVO.class);
+        UserVO result = BeanUtil.copyProperties(loginUser, UserVO.class);
+        result.setId(loginUser.getUserId());
+        return result;
     }
     
     @Override

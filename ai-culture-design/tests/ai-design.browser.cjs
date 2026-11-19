@@ -1,23 +1,29 @@
 const assert = require('node:assert/strict');
+const origin = process.env.FRONTEND_URL || 'http://127.0.0.1:5175';
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright');
 (async () => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    await page.addInitScript(() => { localStorage.setItem('isLogin', 'true'); localStorage.setItem('username', 'design_test'); localStorage.setItem('auth_token', 'browser-test-token'); });
+    let imageConfigured = true, textCalls = 0;
+    await page.route('**/agent-api/health', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'UP', modelConfigured: true, imageConfigured }) }));
+    page.on('request', request => { if (request.url().endsWith('/agent-api/chat')) textCalls++; });
+    await page.route('**/agent-api/chat', route => route.fulfill({ contentType: 'text/event-stream', body: 'event:done\ndata:' + JSON.stringify({ content: '依据文化资料生成的设计方案', sources: [], images: [] }) + '\n\n' }));
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     const pending = [];
-    await page.route('**/api/v3/images/generations', route => { pending.push(route); });
+    await page.route('**/agent-api/image', route => { pending.push(route); });
     await page.route('**/qa-design.svg', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="512" height="512" fill="#8b1538"/><text x="120" y="256" fill="white" font-size="32">Design preview</text></svg>' }));
     const nextRequest = async () => { for(let i=0;i<100 && !pending.length;i++) await new Promise(r=>setTimeout(r,50)); assert.ok(pending.length,'expected image request'); return pending.shift(); };
-    const success = route => route.fulfill({contentType:'application/json',body:JSON.stringify({data:[{url:'http://127.0.0.1:5175/qa-design.svg'}]})});
+    const success = route => route.fulfill({contentType:'application/json',body:JSON.stringify({url:'https://example.com/qa-design.svg'})});
     const send = async text => { await page.locator('textarea').fill(text); await page.locator('.send-btn').click(); return nextRequest(); };
     const settled = () => page.waitForFunction(() => !document.querySelector('.loading-indicator'));
-    await page.goto('http://127.0.0.1:5175/design');
+    await page.goto(origin + '/design');
     assert.equal(await page.locator('.history-item').count(),0,'no fabricated history');
     let request = await send('设计一个昆曲主题的现代简约文化衫');
     assert.ok(await page.locator('.reply-text').innerText());
-    assert.match(await page.locator('.loading-indicator').innerText(),/正在生成图片/);
+    assert.match(await page.locator('.loading-indicator').innerText(),/正在生成效果图/);
     assert.notEqual(await page.locator('.dot').first().evaluate(el=>getComputedStyle(el).backgroundColor),'rgba(0, 0, 0, 0)');
     assert.match(request.request().postDataJSON().prompt,/文化衫/);
     await success(request); await settled();
@@ -30,9 +36,9 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright')
     assert.equal(await page.locator('.result-image').count(),1,'image restored after reload');
     console.log('PASS: visible progress, full prompt, history switching and reload');
     request = await send('把文化衫改成白色');
-    await request.fulfill({status:401,contentType:'application/json',body:JSON.stringify({error:{message:'invalid'}})}); await settled();
+    await request.fulfill({status:401,contentType:'application/json',body:JSON.stringify({message:'图片服务密钥无效'})}); await settled();
     assert.match(await page.locator('.generation-error').innerText(),/密钥无效/);
-    await page.getByRole('button',{name:'重试生成图片'}).click(); request=await nextRequest(); await success(request); await settled();
+    await page.getByRole('button',{name:'重新生成（使用额度）'}).click(); request=await nextRequest(); await success(request); await settled();
     assert.equal(await page.locator('.generation-error').count(),0);
     assert.equal(await page.locator('.history-item').count(),1,'continuation updates same conversation');
     console.log('PASS: failure message and retry');
@@ -47,9 +53,17 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright')
     assert.match(await page.locator('.generation-error').last().innerText(),/已取消/);
     assert.equal(await page.locator('.history-item').count(),2);
     console.log('PASS: cancellation and stale response isolation');
+    await page.getByRole('button',{name:'新建对话'}).click();
+    imageConfigured = false;
+    const previousTextCalls = textCalls;
+    await page.locator('textarea').fill('没有密钥时不要先花费文字额度');
+    await page.locator('.send-btn').click();
+    await page.getByText(/图片服务尚未配置，暂不能生成图片/).waitFor();
+    assert.equal(textCalls, previousTextCalls);
+    assert.equal(pending.length, 0);
+    console.log('PASS: missing image configuration blocks generation before text billing');
     assert.deepEqual(errors,[]);
 
     console.log('PASS: no browser runtime errors');
   } finally { await browser.close(); }
 })().catch(error=>{console.error(error);process.exitCode=1});
-

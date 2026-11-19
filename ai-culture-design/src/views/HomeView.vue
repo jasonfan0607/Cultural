@@ -1264,8 +1264,8 @@ const carouselItems = ref([
     description: '探索江苏丰富的文化遗产，感受传统文化与现代科技的完美融合'
   },
   {
-    type: 'image',
-    src: '/Homepagebackground2.png',
+    type: 'video',
+    src: '/backgroundvideo3.mp4',
     title: '江苏非物质文化遗产',
     description: '品味江苏独特的非遗文化，体验传统工艺的魅力'
   },
@@ -1276,8 +1276,8 @@ const carouselItems = ref([
     description: '跟随地图探索江苏各地的文化特色，感受地域文化的多样性'
   },
   {
-    type: 'image',
-    src: 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=Jiangsu%20cultural%20heritage%20traditional%20architecture&image_size=landscape_16_9',
+    type: 'video',
+    src: '/backgroundvideo4.mp4',
     title: 'AI 助力文化创新',
     description: '利用人工智能技术，为传统文化注入新的活力'
   }
@@ -1569,7 +1569,9 @@ onUpdated(() => {
 
 /* 确保轮播项正确显示 */
 .el-carousel__item {
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1919,7 +1921,7 @@ onUpdated(() => {
   }
   
   .el-carousel {
-    height: 300px !important;
+    height: 100%;
   }
 }
 

@@ -1,11 +1,13 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import '@surely-vue/table/dist/index.less';
 
 const router = useRouter()
+const route = useRoute()
 const footerRef = ref(null)
+const navbarRef = ref(null)
 
 const menu = [
   { 
@@ -33,7 +35,7 @@ const menu = [
   { 
     title: 'AI 设计', 
     to: '/design',
-    children: []
+    children: [{ title: '文化智能体', to: '/agent' }, { title: '图片设计', to: '/design' }]
   },
   { 
     title: '江苏图库', 
@@ -61,6 +63,21 @@ function updateUserInfo() {
   username.value = localStorage.getItem('username') || '';
   avatar.value = localStorage.getItem('avatar') || 'https://i.pravatar.cc/150';
 }
+
+// localStorage is not reactive: refresh the header after login/logout navigation.
+watch(() => route.fullPath, updateUserInfo, { immediate: true })
+
+// Content pages reserve the actual fixed header height, including wrapped mobile menus.
+watch(navbarRef, (element, previous, onCleanup) => {
+  const updateHeight = () => {
+    document.documentElement.style.setProperty('--site-navbar-height', `${element?.getBoundingClientRect().height || 0}px`)
+  }
+  updateHeight()
+  if (!element) return
+  const observer = new ResizeObserver(updateHeight)
+  observer.observe(element)
+  onCleanup(() => observer.disconnect())
+}, { flush: 'post' })
 
 // 波浪动画效果
 function handleMouseMove(event) {
@@ -115,12 +132,16 @@ function resetWaves() {
 
 onMounted(() => {
   updateUserInfo()
+  window.addEventListener('storage', updateUserInfo)
+  window.addEventListener('user-info-updated', updateUserInfo)
   window.addEventListener('scroll', handleScroll)
   document.addEventListener('mousemove', handleMouseMove)
   document.addEventListener('mouseleave', resetWaves)
 })
 
 onUnmounted(() => {
+  window.removeEventListener('storage', updateUserInfo)
+  window.removeEventListener('user-info-updated', updateUserInfo)
   window.removeEventListener('scroll', handleScroll)
   document.removeEventListener('mousemove', handleMouseMove)
   document.removeEventListener('mouseleave', resetWaves)
@@ -132,6 +153,7 @@ function goLogin() {
 }
 
 function logout() {
+  localStorage.removeItem('auth_token')
   localStorage.removeItem('isLogin')
   localStorage.removeItem('username')
   localStorage.removeItem('avatar')
@@ -147,7 +169,10 @@ function goProfile() {
 
 <template>
   <!-- 导航栏 -->
-  <nav :class="['navbar', { 'navbar-scrolled': isScrolled }]">
+  <nav v-if="route.path !== '/login'" ref="navbarRef" :class="['navbar', { 'navbar-scrolled': isScrolled || route.path === '/agent', 'navbar-on-light': ['/profile', '/works'].includes(route.path) }]">
+    <router-link to="/" class="nav-brand" aria-label="江苏文创 · AI文化设计平台，返回首页" active-class="nav-brand-active" exact-active-class="nav-brand-exact">
+      <img src="/images/brand/jiangsu-cultural-logo.png" alt="江苏文创 · AI文化设计平台" width="262" height="66" />
+    </router-link>
     <div class="nav-menu">
       <div v-for="item in menu" :key="item.title" class="nav-item-container">
         <router-link v-if="item.children.length === 0" :to="item.to" class="nav-item" active-class="active">
@@ -224,7 +249,7 @@ function goProfile() {
   </router-view>
 
   <!-- 全局页脚 -->
-  <footer class="page-footer" ref="footerRef">
+  <footer v-if="route.path !== '/login'" class="page-footer" ref="footerRef">
     <div class="wave-container">
       <div v-for="i in 3" :key="i" :class="`wave wave-${i}`"></div>
     </div>
@@ -263,6 +288,27 @@ function goProfile() {
   -webkit-backdrop-filter: none;
   padding: 16px 30px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.nav-brand {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  width: 200px;
+  margin-right: 24px;
+  text-decoration: none;
+}
+
+.nav-brand img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.nav-brand:focus-visible {
+  outline: 2px solid #b32345;
+  outline-offset: 5px;
+  border-radius: 3px;
 }
 
 .nav-menu {
@@ -329,6 +375,13 @@ function goProfile() {
   text-shadow: none;
 }
 
+.navbar-on-light .nav-item,
+.navbar-on-light .user-name,
+.navbar-on-light .dropdown-arrow {
+  color: #333333;
+  text-shadow: none;
+}
+
 .navbar-scrolled .nav-item:hover {
   background-color: rgba(211, 47, 47, 0.05);
 }
@@ -360,7 +413,8 @@ function goProfile() {
   border-radius: 4px;
 }
 
-.nav-item-with-dropdown:hover .dropdown-menu {
+.nav-item-with-dropdown:hover .dropdown-menu,
+.nav-item-with-dropdown:focus-within .dropdown-menu {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
@@ -754,6 +808,11 @@ function goProfile() {
 
 /* 响应式设计 */
 @media (max-width: 1199px) {
+  .nav-brand {
+    width: 160px;
+    margin-right: 16px;
+  }
+
   .nav-item {
     font-size: 13px;
     padding: 6px 12px;
@@ -763,9 +822,18 @@ function goProfile() {
 @media (max-width: 767px) {
   .navbar {
     padding: 10px 15px;
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .nav-brand {
+    width: 170px;
+    margin-right: 12px;
   }
   
   .nav-menu {
+    order: 3;
+    flex-basis: 100%;
     flex-wrap: wrap;
   }
   

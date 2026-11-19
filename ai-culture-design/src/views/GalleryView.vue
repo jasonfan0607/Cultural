@@ -201,7 +201,7 @@
                         </svg>
                         <span>{{ work.likes }}</span>
                       </button>
-                      <button class="action-btn" @click.stop="collectWork(work)">
+                      <button class="action-btn" :aria-label="work.isCollected ? '取消收藏' : '收藏'" :aria-pressed="work.isCollected" @click.stop="collectWork(work)">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
                           <path d="M19 21L12 16L5 21V5C5 4.46957 5.21071 3.96086 5.58579 3.58579C5.96086 3.21071 6.46957 3 7 3H17C17.5304 3 18.0391 3.21071 18.4142 3.58579C18.7893 3.96086 19 4.46957 19 5V21Z" :fill="work.isCollected ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"/>
                         </svg>
@@ -490,7 +490,7 @@
               </svg>
               {{ selectedWork.isLiked ? '已喜欢' : '喜欢' }}
             </button>
-            <button class="action-btn" @click="collectWork(selectedWork)">
+            <button class="action-btn" :aria-pressed="selectedWork.isCollected" @click="collectWork(selectedWork)">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                 <path d="M19 21L12 16L5 21V5C5 4.46957 5.21071 3.96086 5.58579 3.58579C5.96086 3.21071 6.46957 3 7 3H17C17.5304 3 18.0391 3.21071 18.4142 3.58579C18.7893 3.96086 19 4.46957 19 5V21Z" :fill="selectedWork.isCollected ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"/>
               </svg>
@@ -614,8 +614,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, h, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, h, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { readGalleryCollections, toggleGalleryCollection, subscribeGalleryCollections } from '@/utils/galleryCollections'
+
+const route = useRoute()
+let unsubscribeCollections
 
 const titleChars = '江苏图库'.split('')
 const defaultAvatar = 'https://i.pravatar.cc/150'
@@ -1327,14 +1332,41 @@ function likeWork(work) {
 }
 
 function collectWork(work) {
-  if (!isLoggedIn.value) {
+  if (localStorage.getItem('isLogin') !== 'true' || !localStorage.getItem('username')) {
     ElMessage.warning('请先登录')
     return
   }
-  work.isCollected = !work.isCollected
-  work.collects += work.isCollected ? 1 : -1
-  ElMessage.success(work.isCollected ? '已收藏' : '已取消收藏')
+  try {
+    const collected = toggleGalleryCollection(work, getCategoryLabel(work.category))
+    syncCollections()
+    ElMessage.success(collected ? '已收藏' : '已取消收藏')
+  } catch {
+    ElMessage.error('收藏保存失败，请检查浏览器存储空间后重试')
+  }
 }
+
+function syncCollections() {
+  const ids = new Set(readGalleryCollections().map(item => String(item.id)))
+  const visibleWorks = new Set([...works.value, selectedWork.value].filter(Boolean))
+  for (const work of visibleWorks) {
+    const collected = ids.has(String(work.id))
+    work.collects = Math.max(0, (Number(work.collects) || 0) + Number(collected) - Number(Boolean(work.isCollected)))
+    work.isCollected = collected
+  }
+}
+
+function openCollectionFromRoute() {
+  const id = route.query.work
+  if (!id) return
+  const work = works.value.find(item => String(item.id) === String(id)) ||
+    readGalleryCollections().find(item => String(item.id) === String(id))
+  if (work) {
+    openWorkDetail(work)
+    syncCollections()
+  }
+}
+
+watch(() => route.query.work, openCollectionFromRoute)
 
 function downloadWork(work) {
   const link = document.createElement('a')
@@ -1663,11 +1695,15 @@ function animateStats() {
 }
 
 onMounted(() => {
+  syncCollections()
+  unsubscribeCollections = subscribeGalleryCollections(syncCollections)
+  openCollectionFromRoute()
   animateStats()
   window.addEventListener('scroll', handleScroll)
 })
 
 onUnmounted(() => {
+  unsubscribeCollections?.()
   window.removeEventListener('scroll', handleScroll)
 })
 </script>

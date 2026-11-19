@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "start:agent": "node scripts/start-agent.mjs"
+  },
   "dependencies": {
     "echarts": "^6.0.0"
   }

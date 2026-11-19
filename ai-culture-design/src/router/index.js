@@ -19,7 +19,8 @@ const routes = [
     { path: '/', component: HomeView }, // 访问根路径时，显示 HomeView
     { path: '/feiyi', component: FeiyiView }, // 非遗文化页面
     { path: '/culture', component: CultureLibraryView },
-    { path: '/design', component: AiDesignView },
+    { path: '/design', component: AiDesignView, meta: { requiresAuth: true } },
+    { path: '/agent', component: () => import('../views/AgentView.vue'), meta: { requiresAuth: true } },
     { path: '/works', component: WorksView },
     { path: '/login', component: LoginView }, // 登录页面路由
     {

@@ -58,9 +58,10 @@ public class SearchServiceImpl implements SearchService {
             results.addAll(searchWork(keyword));
         }
         
-        results.sort((a, b) -> b.getViewCount().compareTo(a.getViewCount()));
+        results.sort(java.util.Comparator.comparing(SearchResultVO::getViewCount,
+                java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())));
         
-        int start = (int) ((searchDTO.getPageNum() - 1) * searchDTO.getPageSize());
+        int start = (int) Math.min((long) (searchDTO.getPageNum() - 1) * searchDTO.getPageSize(), results.size());
         int end = Math.min(start + searchDTO.getPageSize(), results.size());
         
         resultPage.setRecords(results.subList(start, end));

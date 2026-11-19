@@ -1,0 +1,14 @@
+# Copy to application-local.yml in this directory. This file is ignored by Git.
+# Leave keys empty to start the service in an unconfigured state; requests fail clearly with 503.
+agent:
+  deepseek-key: ""
+  model: deepseek-flash
+  thinking: false
+  image-key: ""
+  image-model: doubao-seedream-5-0-260128
+  backend-url: http://127.0.0.1:8080/api
+
+# Optional: enable Google/Baidu results via SerpAPI. With no key, use public DuckDuckGo/Sogou search.
+search:
+  serpapi-key: ""
+  engine: google # google or baidu

@@ -10,7 +10,6 @@ export function setToken(token) {
   if (token) {
     localStorage.setItem(TOKEN_KEY, token)
     localStorage.setItem('isLogin', 'true')
-    console.log('Token已保存:', token.substring(0, 20) + '...')
   }
 }
 

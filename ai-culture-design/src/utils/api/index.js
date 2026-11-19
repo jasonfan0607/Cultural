@@ -8,6 +8,7 @@ import { newsApi } from './news'
 import { celebrityApi } from './celebrity'
 import { artApi } from './art'
 import { getToken, setToken, removeToken, request, get, post, put, del } from './request'
+import { agentText, agentImage } from '../../AI-API/agent.js'
 
 export { getToken, setToken, removeToken, request, get, post, put, del }
 export { heritageApi, newsApi, celebrityApi, artApi }
@@ -71,9 +72,8 @@ export const categoryApi = {
 }
 
 export const aiApi = {
-  generateDesign: (data) => post('/api/ai/design/generate', data),
-  generateImage: (data) => post('/api/ai/image/generate', data),
-  getDesignHistory: (params) => get('/api/ai/design/history', params),
+  generateDesign: async (data) => ({ code: 200, data: await agentText(data.prompt || data.description || '') }),
+  generateImage: async (data) => ({ code: 200, data: await agentImage(data.prompt, data.size || '2048x2048', data) }),
 }
 
 export const culturalApi = {

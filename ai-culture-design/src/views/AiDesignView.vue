@@ -85,6 +85,8 @@
           <p class="hero-eyebrow">江苏文化 · AI创意生成</p>
           <h1>让传统文化以更高级的方式被看见</h1>
           <p>围绕苏州园林、南京云锦、昆曲、苏绣等元素，快速生成适合海报、包装、文创和品牌视觉的设计方案。</p>
+          <RouterLink to="/agent">先和文化智能体聊聊，查资料、构思方案 →</RouterLink>
+          <p v-if="serviceStatus" class="generation-error" role="status">{{ serviceStatus }} <button class="status-action" @click="checkImageService().catch(() => {})">重新检查</button></p>
         </div>
         <div class="hero-metrics">
           <div>
@@ -192,21 +194,21 @@
               </div>
               <div class="message-content">
                 <div class="message-bubble ai-bubble">
-                  <div v-if="message.content" class="reply-text">{{ message.content }}</div>
+                  <MarkdownText v-if="message.content" class="reply-text" :content="message.content" />
                   <div v-if="message.isLoading" class="loading-indicator" role="status">
                     <span class="dot"></span>
                     <span class="dot"></span>
                     <span class="dot"></span>
-                    <span>正在生成图片，请稍候…</span>
+                    <span>{{ message.stage || '正在准备生成…' }}</span>
                     <button class="status-action" @click="stopGeneration">取消</button>
                   </div>
                   <div v-if="message.error" class="generation-error" role="alert">
                     {{ message.error }}
-                    <button v-if="message.params" class="status-action" :disabled="isGenerating" @click="generateReply(message)">重试生成图片</button>
+                    <button v-if="message.params" class="status-action" :disabled="isGenerating" @click="retryReply(message)">重新生成（使用额度）</button>
                   </div>
                   <div v-if="message.notice" class="generation-notice">{{ message.notice }}</div>
                 </div>
-                <div v-if="message.imageUrl && !message.isLoading" class="ai-image-result">
+                <div v-if="message.imageUrl && !message.isLoading && !message.imageFailed" class="ai-image-result">
                   <img :src="message.imageUrl" alt="设计结果" class="result-image" @load="onImageLoad" @error="onImageError(message)" />
                   <div class="image-actions">
                     <button class="img-action-btn" @click="downloadImage(message.imageUrl)">
@@ -217,11 +219,11 @@
                       </svg>
                       下载
                     </button>
-                    <button class="img-action-btn" @click="saveToCollection(message)">
+                    <button class="img-action-btn" @click="router.push('/works')">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M19 21L12 16L5 21V5C5 4.46957 5.21071 3.96086 5.58579 3.58579C5.96086 3.21071 6.46957 3 7 3H17C17.5304 3 18.0391 3.21071 18.4142 3.58579C18.7893 3.96086 19 4.46957 19 5V21Z" stroke="currentColor" stroke-width="2"/>
                       </svg>
-                      收藏
+                      我的作品
                     </button>
                   </div>
                 </div>
@@ -268,23 +270,43 @@
 <script setup>
 import { ref, reactive, nextTick, onMounted, onUnmounted } from 'vue'
 import { generateCultureDesign, generateJiangsuCultureImage } from '../AI-API'
+import { agentHealth } from '../AI-API/agent.js'
+import MarkdownText from '../components/MarkdownText.vue'
 import { ElMessage } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
+import { currentDesignUser, readDesignHistory, writeDesignHistory, readUserWorks, saveGeneratedWork } from '@/utils/designStorage'
+
+const route = useRoute()
+const router = useRouter()
+// Capture the account owning this workspace; async responses must not move to
+// another account if the browser signs in elsewhere while generation runs.
+const designOwner = currentDesignUser()
 
 const userInput = ref('')
 const messages = ref([])
 const isGenerating = ref(false)
+const serviceStatus = ref('')
+async function checkImageService(signal) {
+  try {
+    const health = await agentHealth({ signal })
+    serviceStatus.value = health.imageConfigured ? '' : '图片服务尚未配置，请联系管理员开通。文字方案可前往文化助手生成。'
+    return health.imageConfigured
+  } catch (error) {
+    serviceStatus.value = '暂时无法连接图片服务，请稍后重试。'
+    throw error
+  }
+}
 const textAreaRef = ref(null)
 const conversationRef = ref(null)
 const chatMessagesRef = ref(null)
 const currentHistoryId = ref(null)
-const HISTORY_KEY = 'cultural.design-history.v1'
 const designHistory = ref(readHistory())
 let activeRequest = null
 let storageWarningShown = false
 
 function readHistory() {
   try {
-    const saved = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]')
+    const saved = readDesignHistory(designOwner)
     if (!Array.isArray(saved)) return []
     return saved.filter(item => item && typeof item.id === 'string' && Array.isArray(item.messages))
       .slice(0, 50).map(item => ({
@@ -311,7 +333,7 @@ function saveCurrentChat() {
   }
   designHistory.value = [entry, ...designHistory.value.filter(item => item.id !== entry.id)].slice(0, 50)
   try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(designHistory.value))
+    writeDesignHistory(designOwner, designHistory.value)
   } catch {
     if (!storageWarningShown) {
       ElMessage.warning('浏览器存储不可用或已满，对话暂时只保留在当前页面。')
@@ -395,6 +417,12 @@ async function sendMessage() {
   await generateReply(reply)
 }
 
+function retryReply(reply) {
+  // An explicit new generation may incur a new charge; transport replays retain the same request ID.
+  reply.imageRequestId = crypto.randomUUID()
+  generateReply(reply)
+}
+
 async function generateReply(reply) {
   if (isGenerating.value) return
   const request = { controller: new AbortController(), reply }
@@ -404,24 +432,47 @@ async function generateReply(reply) {
   reply.error = ''
   reply.notice = ''
   reply.imageUrl = null
+  reply.imageFailed = false
+  reply.stage = '正在检查图片服务…'
   saveCurrentChat()
   scrollToBottom()
   try {
+    if (!await checkImageService(request.controller.signal))
+      throw new Error('图片服务尚未配置，暂不能生成图片。请先配置服务端火山方舟密钥及模型权限。')
     const params = reply.params
-    const text = await generateCultureDesign(params.culturalElement, params.style, params.purpose)
-    if (activeRequest !== request) return
-    reply.content = text
+    if (!reply.textComplete) {
+      reply.content = ''
+      reply.stage = '正在构思设计方案…'
+      const text = await generateCultureDesign(params.culturalElement, params.style, params.purpose,
+        { signal: request.controller.signal, description: params.description, onEvent(event, data) {
+          if (activeRequest !== request) return
+          if (event === 'text-start') reply.content = ''
+          if (event === 'delta') { reply.content += data.text; reply.stage = '正在撰写设计方案…'; scrollToBottom() }
+          if (event === 'tool' || event === 'status') reply.stage = data.message
+        } })
+      if (activeRequest !== request) return
+      reply.content = text
+      reply.textComplete = true
+    }
     saveCurrentChat()
     scrollToBottom()
+    reply.stage = '正在生成效果图，请稍候…'
     const imageUrl = await generateJiangsuCultureImage(
       params.culturalElement, params.style, '2048x2048',
-      { signal: request.controller.signal, description: params.description, purpose: params.purpose }
+      { signal: request.controller.signal, description: (params.description + '\n设计方案：' + reply.content).slice(0, 3500), purpose: params.purpose,
+        requestId: reply.imageRequestId ||= crypto.randomUUID() }
     )
     if (activeRequest !== request) return
     reply.imageUrl = imageUrl
+    reply.generatedAt = Date.now()
+    try {
+      saveGeneratedWork(designOwner, currentHistoryId.value, reply, messages.value.indexOf(reply))
+    } catch {
+      ElMessage.warning('图片已生成，但自动保存作品失败，请保留图片并检查浏览器存储空间。')
+    }
   } catch (error) {
     if (activeRequest !== request) return
-    reply.error = `图片生成失败：${error.message || '请稍后重试。'}`
+    reply.error = `生成未完成：${error.message || '请稍后重试。'}`
   } finally {
     if (activeRequest === request) {
       activeRequest = null
@@ -490,7 +541,7 @@ function scrollToBottom() {
 }
 
 function onImageError(message) {
-  message.imageUrl = null
+  message.imageFailed = true
   message.error = '图片无法加载，链接可能已过期或网络不可用，可重试生成。'
   saveCurrentChat()
 }
@@ -507,10 +558,6 @@ function downloadImage(url) {
   ElMessage.success('图片下载中...')
 }
 
-function saveToCollection(message) {
-  ElMessage.success('已收藏到个人中心')
-}
-
 function handleKeydown(event) {
   if (event.ctrlKey && event.key === 'n') {
     event.preventDefault()
@@ -519,6 +566,13 @@ function handleKeydown(event) {
 }
 
 onMounted(() => {
+  try {
+    readUserWorks(designOwner)
+  } catch {
+    ElMessage.warning('历史作品同步失败，请检查浏览器存储空间。')
+  }
+  if (typeof route.query.history === 'string') loadHistory(route.query.history)
+  checkImageService().catch(() => {})
   document.addEventListener('keydown', handleKeydown)
 })
 
@@ -626,7 +680,7 @@ onUnmounted(() => {
 .user-bubble { background: linear-gradient(135deg, #8b1538, #a91f45); color:#fff; border-bottom-right-radius:6px; }
 .ai-bubble { background: rgba(255,255,255,0.92); color: var(--text); border-bottom-left-radius:6px; }
 .loading-indicator { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:12px 0 4px; color:var(--accent); font-size:13px; }
-.reply-text { white-space:pre-wrap; overflow-wrap:anywhere; }
+.reply-text { white-space:normal; overflow-wrap:anywhere; }
 .generation-error { margin-top:12px; color:#9f1239; font-size:13px; }
 .generation-notice { margin-top:8px; color:var(--muted); font-size:13px; }
 .status-action { border:0; background:transparent; color:var(--accent); padding:4px 8px; text-decoration:underline; cursor:pointer; font:inherit; }
